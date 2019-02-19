@@ -10,3 +10,12 @@
 #include "simpleSocket.h" 
 
 #define FILE_PATH "./files/"
+
+
+int sendFileSize(int sockfd, struct sockaddr *client, const char* filename);
+
+int recvACK(int sockfd);
+
+int sendFile(int sockfd, struct sockaddr *client, struct SimpleUDPmsg *recvbuf);
+
+int handleMsg(int sockfd);

@@ -17,11 +17,14 @@
 struct ThreadAttri{
     int t_idx, connectNum, filesize;
     char filename[MAX_FILENAME_LEN]; //use one buffer 
-	int socklist[MAX_SERVER]; 
 };
 
 void getFilepath(int idx, const char* filename, char* filepath);
 
 int getFilesize(int sockfd, const char* filename);
 
-vector<int> getActiveSockList(vector<SimpleAddress> list, const char* filename);
+int getActiveSockList(vector<SimpleAddress> &list, vector<int> &socklist, const char* filename);
+
+int sendReadRequest(int sockfd, const char* filename, int offset);
+
+int downloadFile(int sockfd, const char* filename, int offset);
