@@ -45,5 +45,4 @@ IRBRC=/home/hhllii/.rvm/rubies/ruby-2.3.0/.irbrc
 JOURNAL_STREAM=9:41207
 LANG=en_US.UTF-8
 LESSCLOSE='/usr/bin/lesspipe %s %s'
-LESSOPEN='| /usr/bin/lesspipe %s'
-LINES=24
+LESSOPEN='| /usr/
