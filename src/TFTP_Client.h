@@ -15,7 +15,7 @@
 #define DEST_PATH "./dest/"
 
 struct ThreadAttri{
-    int t_idx, connectNum, filesize;
+    int t_idx, filesize;
     char filename[MAX_FILENAME_LEN]; //use one buffer 
 };
 

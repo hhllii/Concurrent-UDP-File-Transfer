@@ -4,6 +4,8 @@ using namespace std;
 
 int fileSize; //read only
 int chunkSize; //read only
+int numChunk;
+int maxParallel;
 vector<int> serverState; //use lock
 vector<int> socklist;
 vector<SimpleAddress> addList; //only read
@@ -134,6 +136,7 @@ int sendReadRequest(int sockfd, const char* filename, int offset){
     sentbuf.code = 2;
     sentbuf.offset = offset;
     sentbuf.chunksize = chunkSize;
+    sentbuf.numchunk = numChunk;
     strcpy(sentbuf.filename,filename);
     // Send request
     if (send(sockfd, psentbuf, sizeof(sentbuf), 0) < 0)
@@ -147,11 +150,63 @@ int sendReadRequest(int sockfd, const char* filename, int offset){
 
 int downloadFile(int sockfd, const char* filename, int offset){
     printf("Download File \n");
+    int recvsock;
     struct SimpleUDPmsg recvbuf;
     struct SimpleUDPmsg *precvbuf = &recvbuf;
 
     struct SimpleUDPmsg sentbuf;
     struct SimpleUDPmsg *psentbuf = &sentbuf;
+
+    struct sockaddr_in server;
+    socklen_t addrlen = sizeof(struct sockaddr_in);
+    struct sockaddr_in* pserver = &server;
+    //recv ACK new port from orignal port
+    int recvPort;
+    if( recv(sockfd, precvbuf, sizeof(recvbuf), 0) < 0 ){
+            printf("Socket error %s(errno: %d)\n", strerror(errno),errno);
+            return -1;
+    }
+    if(recvbuf.code == 3){
+        recvPort = recvbuf.serverPort;
+    }else{
+        printf("Got new port error\n");
+        return -1;
+    }
+
+    // Build new socket with new port 
+    // Get the address
+    char* address;
+    for(int i = 0; i < socklist.size(); i++){
+        if(socklist[i] == sockfd){
+            address = addList[i].address;
+        }
+    }
+    if( (recvsock = socket(AF_INET, SOCK_DGRAM, 0)) == -1 ){
+        printf("Create socket error: %s(errno: %d)\n",strerror(errno),errno);
+        return -1;
+    }
+
+    if(createSocketAddr(pserver, address, recvPort) < 0){
+        printf("\n Invalid address: %s\n", address);
+        return -1;
+    }
+
+    // Set timeout
+    setTimeout(recvsock, 1, 1);
+
+    if (connect(recvsock, (struct sockaddr *)&server, sizeof(server)) < 0) 
+    { 
+        printf("\n Connection Failed %s(errno: %d)\n",strerror(errno),errno);
+        return -1;
+    } 
+    printf("*New port is: %d\n", recvPort);
+    printf("*New address is: %s\n", address);
+    // Send ACK new port
+    sentbuf.code = 3;
+    if (send(recvsock, psentbuf, sizeof(sentbuf), 0) < 0){
+        printf("Send ACK new error: %s(errno: %d)\n", strerror(errno), errno);
+        return -1;
+    }
 
     // Construct file path
     char filepath[MAX_PATH_LEN]; //*bug didn't check the len if filename too long 
@@ -162,21 +217,26 @@ int downloadFile(int sockfd, const char* filename, int offset){
         return -1;
     }
     while(1){
-
         memset(&recvbuf,0,sizeof(recvbuf));
-        if( recv(sockfd, precvbuf, sizeof(recvbuf), 0) < 0 ){
-            printf("Socket error %s(errno: %d)\n", strerror(errno),errno);
+        // if(recv(sockfd, precvbuf, sizeof(recvbuf), 0) < 0){
+        //     printf("Socket recv error %s(errno: %d)\n", strerror(errno),errno);
+        //     return -1;
+        // }
+        int recv_size =recvfrom(recvsock,&recvbuf,sizeof(recvbuf),0,NULL, NULL);
+        if(recv_size < 0){
+            printf("Socket recvfrom error %s(errno: %d)\n", strerror(errno),errno);
             return -1;
         }
         fwrite(recvbuf.buffer, sizeof(char), strlen(recvbuf.buffer), fp);
 
         // Send ACK
         sentbuf.code = 3;
-        if (send(sockfd, psentbuf, sizeof(sentbuf), 0) < 0){
-            printf("Send data error: %s(errno: %d)\n", strerror(errno), errno);
+        if (send(recvsock, psentbuf, sizeof(sentbuf), 0) < 0){
+            printf("Send ACK error: %s(errno: %d)\n", strerror(errno), errno);
             return -1;
         }
         if(recvbuf.code == 3){//last packet close the connection
+            printf("*End of file chunk!\n");
             break;
         }
     }
@@ -188,23 +248,39 @@ void *downloadThread(void *arg){
     struct ThreadAttri *temp;
     temp = (struct ThreadAttri *)arg;
     // Get Attri
-    int connectNum = temp -> connectNum;
     int t_idx = temp -> t_idx;
     char* filename = temp -> filename;
-    // Create socket
-    int sockfd = socklist[t_idx];
-    printf("Thread %d start\n", t_idx);
 
-    // Send read filename request
+    // Find a Server *suppose all server will not down
+    int sockfd;
+    pthread_mutex_lock(&serverStateLock);
+    int serveridx = 0;
+    for(serveridx = 0; serveridx < serverState.size(); ++serveridx){
+        if(serverState[serveridx] > 0 && serverState[serveridx] < maxParallel){
+            serverState[serveridx]++;
+            sockfd = socklist[serveridx];
+        }
+    }
+    pthread_mutex_unlock(&serverStateLock);
+    // Create socket
+    
+    printf("Thread %d start Using sock: %d\n", t_idx, serveridx);
+
+    // Send read filename request will return new port and download part use
     if(sendReadRequest(sockfd, filename, t_idx) == -1){
         printf("Send data error: %s(errno: %d)\n", strerror(errno), errno);
         pthread_exit((void*)-1);
     }
-
+    //downloadFile
     if(downloadFile(sockfd, filename, t_idx) == -1){
         printf("download file error: %s(errno: %d)\n", strerror(errno), errno);
         pthread_exit((void*)-1);
     }
+
+    // End download
+    pthread_mutex_lock(&serverStateLock);
+    serverState[serveridx]--;
+    pthread_mutex_unlock(&serverStateLock);
 
     pthread_exit((void*)1);
 }
@@ -215,7 +291,6 @@ int main(int argc, char const *argv[])
 { 
     int sockfd = 0;
     struct sockaddr_in serv_addr; 
-    int connectNum;
     if(argc != 4){
         printf("usage: ./myclient <server-info.txt> <num-chunks> <filename>\n");
         return 0;
@@ -236,7 +311,8 @@ int main(int argc, char const *argv[])
 
 
     const char* serverFilename = argv[1]; //set servers list
-    connectNum = atoi(argv[2]); //set connection num
+
+    numChunk = atoi(argv[2]); //set connection num
     const char* filename = argv[3]; //set file name
     FILE *serverFp = fopen(serverFilename, "r");
     if(serverFp == NULL){
@@ -251,7 +327,6 @@ int main(int argc, char const *argv[])
     int add_index = 0;
     //add all address
     while(fgets(serverBuffer, 1024, serverFp) != NULL){
-        struct SimpleAddress sa;
         printf("*address line: %s\n", serverBuffer);
         addList.push_back(getAddressbyLine(serverBuffer));
     }
@@ -273,8 +348,7 @@ int main(int argc, char const *argv[])
         printf("No server available! Check server-info.");
         return 0;
     }
-    connectNum = min(connectNum, activeNum);
-
+    maxParallel = numChunk / activeNum + 1;
     //vector to int []
     printf("\n*Avaliable server list:\n");
     for(int i =0; i < socklist.size(); ++i){
@@ -291,18 +365,16 @@ int main(int argc, char const *argv[])
         printf("Socket connection error, server failed\n");
     }
     printf("*Got file size: %d\n", fileSize);
-    chunkSize = fileSize / connectNum;
+    chunkSize = fileSize / numChunk;
 //==================================Thread Start==========================================
     //create thread
     vector<pthread_t> threadList;
     vector<struct ThreadAttri*> attrilist;
     struct ThreadAttri *ptAttri;
-    //struct ThreadAttri *ptAttri[connectNum];
-    for(int i = 0; i < connectNum; ++i){//i >= number of server
+    for(int i = 0; i < numChunk; ++i){//i >= number of server
         pthread_t thid;
         ptAttri = (struct ThreadAttri*)malloc(sizeof(struct ThreadAttri));
         attrilist.push_back(ptAttri);
-        ptAttri->connectNum = connectNum;
         ptAttri->filesize = fileSize;
         ptAttri->t_idx = i;
         memcpy(ptAttri->filename,filename,sizeof(filename));
@@ -314,7 +386,7 @@ int main(int argc, char const *argv[])
         threadList.push_back(thid);
     }
     // Join thread
-    for(int i = 0; i < connectNum; ++i){
+    for(int i = 0; i < numChunk; ++i){
         // int *t_res;
         // if (pthread_join(threadList[i], (void**)&t_res)){
         if (pthread_join(threadList[i], NULL)){ 
@@ -332,12 +404,12 @@ int main(int argc, char const *argv[])
 
 
     //close socket
-    for(int i = 0; i < connectNum; ++i){
+    for(int i = 0; i < numChunk; ++i){
         close(socklist[i]);
     }
 
     // Filecat Assembling 
-    if(fileAssemble(filename, connectNum) < 0){
+    if(fileAssemble(filename, numChunk) < 0){
         printf("File assembling error!\n");
     }
     

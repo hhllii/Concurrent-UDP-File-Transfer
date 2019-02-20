@@ -41,6 +41,8 @@ struct SimpleUDPmsg{
 	int filesize;
 	int offset;
 	int chunksize;
+	int numchunk;
+	int serverPort;
 	char filename[MAX_FILENAME_LEN];
 	char buffer[BUFFER_SIZE];
 };
@@ -52,7 +54,7 @@ bool checkdigit(const char* line);
 
 bool portVarify(const char* port); //with digit and int range
 
-int getFileSize(FILE* fp); //largest 2G file for int
+int getFileSize(FILE* fp); //largest 2G file for int //!!!***careful the fp will return to the start 0
 
 void filecat(FILE* fp1, FILE* fp2); // 1 byte copy
 
