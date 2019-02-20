@@ -130,8 +130,15 @@ int getActiveSockList(vector<SimpleAddress> &list, vector<int> &socklist, const 
 
 int sendReadRequest(int sockfd, const char* filename, int offset){
     // Send read filename request
+        int recvsock;
     struct SimpleUDPmsg sentbuf;
     struct SimpleUDPmsg *psentbuf = &sentbuf;
+
+    struct SimpleUDPmsg recvbuf;
+    struct SimpleUDPmsg *precvbuf = &recvbuf;
+    struct sockaddr_in server;
+    socklen_t addrlen = sizeof(struct sockaddr_in);
+    struct sockaddr_in* pserver = &server;
     // Build msg packet
     sentbuf.code = 2;
     sentbuf.offset = offset;
@@ -145,24 +152,9 @@ int sendReadRequest(int sockfd, const char* filename, int offset){
     }
 
     printf("*Sent file read request: %s\n", filename);
-    return 0;
-}
-
-int downloadFile(int sockfd, const char* filename, int offset){
-    printf("Download File \n");
-    int recvsock;
-    struct SimpleUDPmsg recvbuf;
-    struct SimpleUDPmsg *precvbuf = &recvbuf;
-
-    struct SimpleUDPmsg sentbuf;
-    struct SimpleUDPmsg *psentbuf = &sentbuf;
-
-    struct sockaddr_in server;
-    socklen_t addrlen = sizeof(struct sockaddr_in);
-    struct sockaddr_in* pserver = &server;
-    //recv ACK new port from orignal port
+        //recv ACK new port from orignal port
     int recvPort;
-    if( recv(sockfd, precvbuf, sizeof(recvbuf), 0) < 0 ){
+    if( recv(sockfd, precvbuf, sizeof(recvbuf), 0) < 0 ){ 
             printf("Socket error %s(errno: %d)\n", strerror(errno),errno);
             return -1;
     }
@@ -201,9 +193,25 @@ int downloadFile(int sockfd, const char* filename, int offset){
     } 
     printf("*New port is: %d\n", recvPort);
     printf("*New address is: %s\n", address);
+    return recvsock;
+}
+
+int downloadFile(int sockfd, const char* filename, int offset){
+    printf("Download File \n");
+
+    struct SimpleUDPmsg recvbuf;
+    struct SimpleUDPmsg *precvbuf = &recvbuf;
+
+    struct SimpleUDPmsg sentbuf;
+    struct SimpleUDPmsg *psentbuf = &sentbuf;
+
+    struct sockaddr_in server;
+    socklen_t addrlen = sizeof(struct sockaddr_in);
+    struct sockaddr_in* pserver = &server;
+
     // Send ACK new port
     sentbuf.code = 3;
-    if (send(recvsock, psentbuf, sizeof(sentbuf), 0) < 0){
+    if (send(sockfd, psentbuf, sizeof(sentbuf), 0) < 0){
         printf("Send ACK new error: %s(errno: %d)\n", strerror(errno), errno);
         return -1;
     }
@@ -222,7 +230,7 @@ int downloadFile(int sockfd, const char* filename, int offset){
         //     printf("Socket recv error %s(errno: %d)\n", strerror(errno),errno);
         //     return -1;
         // }
-        int recv_size =recvfrom(recvsock,&recvbuf,sizeof(recvbuf),0,NULL, NULL);
+        int recv_size =recvfrom(sockfd,&recvbuf,sizeof(recvbuf),0,NULL, NULL);
         if(recv_size < 0){
             printf("Socket recvfrom error %s(errno: %d)\n", strerror(errno),errno);
             return -1;
@@ -231,7 +239,7 @@ int downloadFile(int sockfd, const char* filename, int offset){
 
         // Send ACK
         sentbuf.code = 3;
-        if (send(recvsock, psentbuf, sizeof(sentbuf), 0) < 0){
+        if (send(sockfd, psentbuf, sizeof(sentbuf), 0) < 0){
             printf("Send ACK error: %s(errno: %d)\n", strerror(errno), errno);
             return -1;
         }
@@ -256,27 +264,34 @@ void *downloadThread(void *arg){
     pthread_mutex_lock(&serverStateLock);
     int serveridx = 0;
     for(serveridx = 0; serveridx < serverState.size(); ++serveridx){
-        if(serverState[serveridx] > 0 && serverState[serveridx] < maxParallel){
+        if(serverState[serveridx] >= 0 && serverState[serveridx] < maxParallel){
             serverState[serveridx]++;
             sockfd = socklist[serveridx];
+            break;
         }
     }
-    pthread_mutex_unlock(&serverStateLock);
+    if(sockfd == 0){
+        printf("No server to download \n");
+        pthread_exit((void*)-1);
+    }
     // Create socket
     
     printf("Thread %d start Using sock: %d\n", t_idx, serveridx);
 
     // Send read filename request will return new port and download part use
-    if(sendReadRequest(sockfd, filename, t_idx) == -1){
+    int recvsock;
+    if((recvsock = sendReadRequest(sockfd, filename, t_idx) )== -1){
         printf("Send data error: %s(errno: %d)\n", strerror(errno), errno);
         pthread_exit((void*)-1);
     }
+    pthread_mutex_unlock(&serverStateLock);
+
     //downloadFile
-    if(downloadFile(sockfd, filename, t_idx) == -1){
+    if(downloadFile(recvsock, filename, t_idx) == -1){
         printf("download file error: %s(errno: %d)\n", strerror(errno), errno);
         pthread_exit((void*)-1);
     }
-
+    
     // End download
     pthread_mutex_lock(&serverStateLock);
     serverState[serveridx]--;
@@ -352,7 +367,7 @@ int main(int argc, char const *argv[])
     //vector to int []
     printf("\n*Avaliable server list:\n");
     for(int i =0; i < socklist.size(); ++i){
-        serverState.push_back(1);// servers green
+        serverState.push_back(0);// servers green
         printf("Socket id: %i \n", socklist[i]);
         printf("Address: %s Port: %d \n", addList[i].address, addList[i].port);
     }

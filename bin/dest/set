@@ -1,4 +1,14 @@
-4.19(1)-release'
+BASH=/bin/bash
+BASHOPTS=checkwinsize:cmdhist:complete_fullquote:expand_aliases:extglob:extquote:force_fignore:histappend:interactive_comments:progcomp:promptvars:sourcepath
+BASH_ALIASES=()
+BASH_ARGC=()
+BASH_ARGV=()
+BASH_CMDS=()
+BASH_COMPLETION_VERSINFO=([0]="2" [1]="8")
+BASH_LINENO=()
+BASH_SOURCE=()
+BASH_VERSINFO=([0]="4" [1]="4" [2]="19" [3]="1" [4]="release" [5]="x86_64-pc-linux-gnu")
+BASH_VERSION='4.4.19(1)-release'
 CLUTTER_IM_MODULE=xim
 COLORTERM=truecolor
 COLUMNS=80
@@ -11,17 +21,7 @@ DIRSTACK=()
 DISPLAY=:0
 EUID=1000
 GDMSESSION=ubuntu
-GBASH=/bin/bash
-BASHOPTS=checkwinsize:cmdhist:complete_fullquote:expand_aliases:extglob:extquote:force_fignore:histappend:interactive_comments:progcomp:promptvars:sourcepath
-BASH_ALIASES=()
-BASH_ARGC=()
-BASH_ARGV=()
-BASH_CMDS=()
-BASH_COMPLETION_VERSINFO=([0]="2" [1]="8")
-BASH_LINENO=()
-BASH_SOURCE=()
-BASH_VERSINFO=([0]="4" [1]="4" [2]="19" [3]="1" [4]="release" [5]="x86_64-pc-linux-gnu")
-BASH_VERSION='4.EM_HOME=/home/hhllii/.rvm/gems/ruby-2.3.0
+GEM_HOME=/home/hhllii/.rvm/gems/ruby-2.3.0
 GEM_PATH=/home/hhllii/.rvm/gems/ruby-2.3.0:/home/hhllii/.rvm/gems/ruby-2.3.0@global
 GNOME_DESKTOP_SESSION_ID=this-is-deprecated
 GNOME_SHELL_SESSION_MODE=ubuntu
